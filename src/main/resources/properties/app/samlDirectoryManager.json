@@ -20,40 +20,18 @@
                 rows : '7',
                 cols : '65',
                 required : 'true'
-            },{
-                name : 'userProvisioning',
-                label : '@@org.joget.marketplace.saml.dm.userProvisioning@@',
-                type : 'checkbox',
-                options : [{
-                    value : 'true',
-                    label : ''
-                }]
-            }
-        ]
-    },
-    {
-        title: '@@org.joget.marketplace.saml.dm.configAttribute@@',
-        properties: [
-            {
-                name: 'attrFirstName',
-                label: '@@org.joget.marketplace.saml.dm.attrFirstName@@',
-                type: 'textfield',
-                required: 'true',
-                value: 'firstName'
             },
             {
-                name: 'attrLastName',
-                label: '@@org.joget.marketplace.saml.dm.attrLastName@@',
-                type: 'textfield',
-                required: 'true',
-                value: 'lastName'
-            },
-            {
-                name: 'attrEmail',
-                label: '@@org.joget.marketplace.saml.dm.attrEmail@@',
-                type : 'textfield',
-                required: 'true',
-                value: 'email'
+                "name" : "debugMode",
+                "label" : "@@properties.saml.debugMode@@",
+                "description" : "@@properties.saml.debugMode.desc@@",
+                "type" : "checkbox",
+                "options" : [
+                    {
+                        "value" : "true",
+                        "label" : ""
+                    }
+                ]
             }
         ]
     },

@@ -11,6 +11,7 @@ import java.util.Set;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+
 import org.joget.apps.app.service.AppUtil;
 import org.joget.apps.workflow.security.WorkflowUserDetails;
 import org.joget.commons.util.LogUtil;
@@ -20,10 +21,7 @@ import org.joget.directory.dao.UserDao;
 import org.joget.directory.ext.DirectoryManagerAuthenticatorImpl;
 import org.joget.directory.model.Role;
 import org.joget.directory.model.User;
-import org.joget.directory.model.service.DirectoryManager;
-import org.joget.directory.model.service.DirectoryManagerAuthenticator;
-import org.joget.directory.model.service.DirectoryManagerProxyImpl;
-import org.joget.directory.model.service.UserSecurityFactory;
+import org.joget.directory.model.service.*;
 import org.joget.plugin.base.PluginManager;
 import org.joget.plugin.directory.SecureDirectoryManager;
 import org.joget.plugin.directory.SecureDirectoryManagerImpl;
@@ -36,18 +34,19 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 
 /**
+ * @editor akash.johnthadeus <br>
  * SAML SP implementation adapted from https://github.com/onelogin/java-saml/tree/v1.1.2
  */
 public class SamlDirectoryManager extends SecureDirectoryManager {
 
     @Override
     public String getName() {
-        return "SAML Directory Manager";
+        return "Al Shirawi SAML Directory Manager";
     }
 
     @Override
     public String getDescription() {
-        return "Directory Manager with support for SAML 2.0";
+        return "Directory Manager with support for Al Shirawi SAML 2.0";
     }
 
     @Override
@@ -59,7 +58,7 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
     public DirectoryManager getDirectoryManagerImpl(Map properties) {
         return super.getDirectoryManagerImpl(properties);
     }
-        
+
     @Override
     public String getPropertyOptions() {
         UserSecurityFactory f = (UserSecurityFactory) new SecureDirectoryManagerImpl(null);
@@ -76,13 +75,13 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
         }
 
         HttpServletRequest request = WorkflowUtil.getHttpServletRequest();
-        String acsUrl = request.getScheme()+ "://" + request.getServerName();
+        String acsUrl = request.getScheme() + "://" + request.getServerName();
         if (request.getServerPort() != 80 && request.getServerPort() != 443) {
             acsUrl += ":" + request.getServerPort();
         }
         acsUrl += request.getContextPath() + "/web/json/plugin/org.joget.plugin.saml.SamlDirectoryManager/service";
         String entityId = acsUrl;
-        
+
         String json = AppUtil.readPluginResource(getClass().getName(), "/properties/app/samlDirectoryManager.json", new String[]{entityId, acsUrl, usJson, addOnJson}, true, "messages/samlDirectoryManager");
         return json;
     }
@@ -110,19 +109,68 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
         }
 
     }
-            
+
     void doLogin(HttpServletRequest request, HttpServletResponse response) throws IOException {
         try {
 
             // read from properties
-            DirectoryManagerProxyImpl dm = (DirectoryManagerProxyImpl)AppUtil.getApplicationContext().getBean("directoryManager");
-            SecureDirectoryManagerImpl dmImpl = (SecureDirectoryManagerImpl)dm.getDirectoryManagerImpl();
+            DirectoryManagerProxyImpl dm = (DirectoryManagerProxyImpl) AppUtil.getApplicationContext().getBean("directoryManager");
+            SecureDirectoryManagerImpl dmImpl = (SecureDirectoryManagerImpl) dm.getDirectoryManagerImpl();
+
+            Boolean debug = Boolean.parseBoolean(dmImpl.getPropertyString("debugMode"));
+
             String certificate = dmImpl.getPropertyString("certificate");
-            boolean userProvisioningEnabled = Boolean.parseBoolean(dmImpl.getPropertyString("userProvisioning"));
+
+            if (certificate == null || certificate.isEmpty()) {
+                int i = 1;
+                while (true) {
+                    String dmKey = "dm" + i;
+                    Object dmObj = dmImpl.getProperty(dmKey);
+                    // Exit loop if no more dm entries
+                    if (dmObj == null) {
+                        throw new CertificateException("IDP certificate is missing");
+                    }
+
+                    if (dmObj instanceof Map) {
+                        Map<String, Object> dmMap = (Map<String, Object>) dmObj;
+                        Object classNameObj = dmMap.get("className");
+
+                        if ("org.joget.plugin.saml.SamlDirectoryManager".equals(classNameObj)) {
+                            Object propsObj = dmMap.get("properties");
+                            if (propsObj instanceof Map) {
+                                Map<String, Object> propertiesMap = (Map<String, Object>) propsObj;
+
+                                Object debugObj = propertiesMap.get("debugMode");
+                                if (debugObj != null) {
+                                    debug = Boolean.parseBoolean(debugObj.toString());
+                                }
+
+                                Object cert = propertiesMap.get("certificate");
+                                if (cert != null && !cert.toString().isEmpty()) {
+                                    certificate = cert.toString();
+                                    if (debug)
+                                        LogUtil.info("Certificate: ", certificate);
+                                    break;
+                                } else {
+                                    throw new CertificateException("IDP certificate is missing");
+                                }
+                            } else {
+                                LogUtil.info(dmKey + " properties", " is not a Map.");
+                            }
+                        }
+                    }
+                    i++;
+                }
+            }
+
+
+//            boolean userProvisioningEnabled = Boolean.parseBoolean(dmImpl.getPropertyString("userProvisioning"));
+            boolean userProvisioningEnabled = false;
+
             String attrEmail = dmImpl.getPropertyString("attrEmail");
             String attrFirstName = dmImpl.getPropertyString("attrFirstName");
             String attrLastName = dmImpl.getPropertyString("attrLastName");
-                        
+
             if (certificate == null || certificate.isEmpty()) {
                 throw new CertificateException("IDP certificate is missing");
             }
@@ -134,9 +182,13 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
             samlResponse.setDestinationUrl(request.getRequestURL().toString());
 
             if (samlResponse.isValid()) {
+                if (debug) {
+                    LogUtil.info(getClassName() + " : attributes : ", samlResponse.getAttributes().toString());
+                }
                 String username = samlResponse.getNameId();
                 // get user
-                User user = dmImpl.getUserByUsername(username);
+//                User user = dmImpl.getUserByUsername(username);
+                User user = getUserByEmail(username, debug);
                 if (user == null && userProvisioningEnabled) {
                     // user does not exist, provision
                     user = new User();
@@ -148,7 +200,7 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
                     String email = samlResponse.getAttribute(attrEmail);
                     if (email != null) {
                         if (email.startsWith("[")) {
-                            email = email.substring(1, email.length()-1);
+                            email = email.substring(1, email.length() - 1);
                         }
                         user.setEmail(email);
                     }
@@ -156,7 +208,7 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
                     String firstName = samlResponse.getAttribute(attrFirstName);
                     if (firstName != null) {
                         if (firstName.startsWith("[")) {
-                            firstName = firstName.substring(1, firstName.length()-1);
+                            firstName = firstName.substring(1, firstName.length() - 1);
                         }
                         user.setFirstName(firstName);
                     }
@@ -164,12 +216,12 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
                     String lastName = samlResponse.getAttribute(attrLastName);
                     if (lastName != null) {
                         if (lastName.startsWith("[")) {
-                            lastName = lastName.substring(1, lastName.length()-1);
+                            lastName = lastName.substring(1, lastName.length() - 1);
                         }
                         user.setLastName(lastName);
                     }
                     // set role
-                    RoleDao roleDao = (RoleDao)AppUtil.getApplicationContext().getBean("roleDao");
+                    RoleDao roleDao = (RoleDao) AppUtil.getApplicationContext().getBean("roleDao");
                     Set roleSet = new HashSet();
                     Role r = roleDao.getRole("ROLE_USER");
                     if (r != null) {
@@ -177,19 +229,26 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
                     }
                     user.setRoles(roleSet);
                     // add user
-                    UserDao userDao = (UserDao)AppUtil.getApplicationContext().getBean("userDao");
+                    UserDao userDao = (UserDao) AppUtil.getApplicationContext().getBean("userDao");
                     userDao.addUser(user);
                 } else if (user == null && !userProvisioningEnabled) {
                     response.sendRedirect(request.getContextPath() + "/web/login?login_error=1");
                     return;
                 }
-                
+
+                if ("EMAIL_MULTIPLE_USERS".equals(user.getId())) {
+                    response.sendRedirect(request.getContextPath() + "/web/login?login_error=multi");
+                    return;
+                }
+
+                username = user.getUsername();
+
                 // verify license
                 PluginManager pluginManager = (PluginManager) AppUtil.getApplicationContext().getBean("pluginManager");
                 DirectoryManagerAuthenticator authenticator = (DirectoryManagerAuthenticator) pluginManager.getPlugin(DirectoryManagerAuthenticatorImpl.class.getName());
                 DirectoryManager wrapper = new DirectoryManagerWrapper(dmImpl, true);
                 authenticator.authenticate(wrapper, user.getUsername(), user.getPassword());
-                
+
                 // get authorities
                 Collection<Role> roles = dm.getUserRoles(username);
                 List<GrantedAuthority> gaList = new ArrayList<>();
@@ -199,16 +258,22 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
                         gaList.add(ga);
                     }
                 }
-                
+
                 // login user
                 UserDetails details = new WorkflowUserDetails(user);
                 UsernamePasswordAuthenticationToken result = new UsernamePasswordAuthenticationToken(username, "", gaList);
                 result.setDetails(details);
                 SecurityContextHolder.getContext().setAuthentication(result);
 
+                String ip = "";
+                if (request != null) {
+                    ip = AppUtil.getClientIp(request);
+                }
+
                 // add audit trail
+                LogUtil.info(getClass().getName(), "Authentication for user " + username + " (" + ip + ") : " + true);
                 WorkflowHelper workflowHelper = (WorkflowHelper) AppUtil.getApplicationContext().getBean("workflowHelper");
-                workflowHelper.addAuditTrail(this.getClass().getName(), "authenticate", "Authentication for user " + username + ": " + true);
+                workflowHelper.addAuditTrail(this.getClass().getName(), "authenticate", "Authentication for user " + username + "(" + ip + "): " + true);
 
                 // redirect
                 String relayState = request.getParameter("RelayState");
@@ -225,6 +290,32 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
             request.getSession().setAttribute("SPRING_SECURITY_LAST_EXCEPTION", new Exception(ResourceBundleUtil.getMessage("AbstractUserDetailsAuthenticationProvider.badCredentials")));
             String url = request.getContextPath() + "/web/login?login_error=1";
             response.sendRedirect(url);
+        }
+
+    }
+
+    private User getUserByEmail(String email, Boolean debug) {
+        ExtDirectoryManager directoryManager = (ExtDirectoryManager) AppUtil.getApplicationContext().getBean("directoryManager");
+        Collection<User> userList = directoryManager.getUsers(email, null, null, null, null, null, null, "firstName", false, null, null);
+
+        if (userList == null || userList.isEmpty()) {
+            if (debug)
+                LogUtil.warn(getClassName(), "No account is linked to this email address : " + email);
+            return null; // No users found
+        }
+        if (userList.size() == 1) {
+            // Exactly one user found
+            User singleUser = userList.iterator().next();
+            if (debug)
+                LogUtil.info(getClassName(), singleUser.getUsername() + " : account is linked to this email address : " + email);
+            return singleUser;
+        } else {
+            // More than one user found
+            User multiUser = new User();
+            multiUser.setId("EMAIL_MULTIPLE_USERS");
+            if (debug)
+                LogUtil.info(getClassName(), "Multiple accounts are linked to this email address : " + email);
+            return multiUser;
         }
 
     }
