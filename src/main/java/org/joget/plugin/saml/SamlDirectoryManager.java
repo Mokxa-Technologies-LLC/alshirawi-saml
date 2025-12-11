@@ -299,7 +299,14 @@ public class SamlDirectoryManager extends SecureDirectoryManager {
 
     private User getUserByEmail(String email, Boolean debug) {
         ExtDirectoryManager directoryManager = (ExtDirectoryManager) AppUtil.getApplicationContext().getBean("directoryManager");
-        Collection<User> userList = directoryManager.getUsers(email, null, null, null, null, null, null, "firstName", false, null, null);
+        Collection<User> userListAll = directoryManager.getUsers(email, null, null, null, null, null, null, "firstName", false, null, null);
+        Collection<User> userList = new ArrayList<>();
+
+        for (User u : userListAll) {
+            if(email.equals(u.getEmail())){
+                userList.add(u);
+            }
+        }
 
         if (userList == null || userList.isEmpty()) {
             if (debug)

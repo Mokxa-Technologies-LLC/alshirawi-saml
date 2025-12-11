@@ -4,7 +4,7 @@
     <groupId>org.joget</groupId>
     <artifactId>alshirawi-wflow-saml</artifactId>
     <packaging>bundle</packaging>
-    <version>6.0.3</version>
+    <version>6.0.3-v2</version>
     <name>alshirawi-wflow-saml</name>
     <url>http://www.joget.org</url>
     <build>
